@@ -653,6 +653,7 @@ const translate = {
 	visible_qj_zhaoran: "昭然",
 	heart_qj_minsi:"敏思",
 	visible_qj_xiyuanjun: "西园军",
+	visible_qj_xiyuanjun_2: "西园军",
 	qj_huoji_zongheng_info:
 		"你可以将一张红色手牌当【火攻】使用。",
 };
