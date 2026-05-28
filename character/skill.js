@@ -47,29 +47,41 @@ function createTonglingSkill(skillName, ycName, cardName, cardTranslation, limit
 				}
 				let players = game.players.sortBySeat();
 				for (let p of players) {
-					if (p.isFriendOf(player)) {
-						if (p.name1.startsWith("gz_shibing")) {
-							var name = p.name1;
-							game.log(p, "士兵变为了" + get.translation(yc));
-							p.reinit(name, yc, false);
-							p.showCharacter(0, false);
-							// @ts-expect-error 类型就是这么写的
-							_status.characterlist.add(name);
-							if (!game.useTongling(player.identity, yc)) {
-								break;
+					if (!p.isFriendOf(player)) {
+						continue;
+					}
+					// 该角色是否已经拥有同名翼从士兵
+					const alreadyHasYc = p.name1 === yc || p.name2 === yc;
+					// 将指定槽位的士兵变为翼从
+					const transformToYc = async slotIndex => {
+						const key = slotIndex === 0 ? "name1" : "name2";
+						const oldName = p[key];
+						game.log(p, "士兵变为了" + get.translation(yc));
+						p.reinit(oldName, yc, false);
+						p.showCharacter(slotIndex, false);
+						// 如果这是第二个同名翼从士兵，则给其添加对应的 _2 技能
+						if (alreadyHasYc) {
+							const info = get.character(yc);
+							const skills = Array.isArray(info) ? info[3] || [] : Array.isArray(info.skills) ? info.skills : [];
+							for (const s of skills) {
+								if (typeof s !== "string") continue;
+								const alt = s + "_2";
+								if (lib.skill[alt]) {
+									p.addSkill(alt);
+								}
 							}
 						}
-						if (p.name2.startsWith("gz_shibing")) {
-							var name = p.name2;
-							game.log(p, "士兵变为了" + get.translation(yc));
-							p.reinit(name, yc, false);
-							p.showCharacter(1, false);
-							// @ts-expect-error 类型就是这么写的
-							_status.characterlist.add(name);
-							if (!game.useTongling(player.identity, yc)) {
-								break;
-							}
-						}
+						// @ts-expect-error 类型就是这么写的
+						_status.characterlist.add(oldName);
+						return game.useTongling(player.identity, yc);
+					};
+					if (p.name1.startsWith("gz_shibing")) {
+						const used = await transformToYc(0);
+						if (!used) break;
+					}
+					if (p.name2.startsWith("gz_shibing")) {
+						const used = await transformToYc(1);
+						if (!used) break;
 					}
 				}
 			} else {
@@ -260,7 +272,41 @@ const skill = {
 			},
 		},
 	},
-	qj_guicai: {
+	qj_yingqi: {
+		locked: true,
+		charlotte: true,
+		trigger: { player: "showCharacterAfter" },
+		filter(event, player) {
+			if (!player.name2 || player.isUnseen(1)) {
+				return false;
+			}
+			const check = info => info && ((info.doubleGroup && info.doubleGroup.length) || (info.keGroup && info.keGroup.length));
+			return check(get.character(player.name1)) || check(get.character(player.name2));
+		},
+		forced: true,
+		silent: true,
+		async content(event, trigger, player) {
+			player.extraYinyangyu = (player.extraYinyangyu || 0) + 2;
+		},
+	},
+	qj_yingqi_jin: {
+		locked: true,
+		charlotte: true,
+		trigger: { player: "showCharacterAfter" },
+		filter(event, player) {
+			if (!player.name2 || player.isUnseen(1)) {
+				return false;
+			}
+			const check = info => info && ((info.doubleGroup && info.doubleGroup.length) || (info.keGroup && info.keGroup.length));
+			return check(get.character(player.name1)) || check(get.character(player.name2));
+		},
+		forced: true,
+		silent: true,
+		async content(event, trigger, player) {
+			player.extraYinyangyu = (player.extraYinyangyu || 0) + 2;
+		},
+	},
+	qj_yingshi: {
 		audio: "guicai",
 		trigger: { global: "judge" },
 		preHidden: true,
@@ -307,7 +353,7 @@ const skill = {
 			}
 		},
 		async content(event, trigger, player) {
-			await player.respond(event.cards, "qj_guicai", "highlight", "noOrdering");
+			await player.respond(event.cards, "qj_yingshi", "highlight", "noOrdering");
 			if (trigger.player.judging[0].clone) {
 				trigger.player.judging[0].clone.classList.remove("thrownhighlight");
 				game.broadcast(function (card) {
@@ -330,7 +376,7 @@ const skill = {
 			},
 		},
 	},
-	qj_fankui: {
+	qj_langgu: {
 		audio: "fankui",
 		trigger: { player: "damageEnd" },
 		logTarget: "source",
@@ -869,7 +915,7 @@ const skill = {
 	qj_shensu: {
 		audio: "shensu1",
 		group: ["qj_shensu_1", "qj_shensu_2", "qj_shensu_3"],
-		preHidden: ["qj_hensu_1", "qj_shensu_2", "qj_shensu_3"],
+		preHidden: ["qj_shensu_1", "qj_shensu_2", "qj_shensu_3"],
 		subSkill: {
 			1: {
 				audio: "shensu1",
@@ -2277,6 +2323,41 @@ const skill = {
 				},
 				sub: true,
 			},
+		},
+	},
+	qj_tuzhen: {
+		audio: "longdan_sha",
+		trigger: {
+			player: ["shaMiss", "eventNeutralized"],
+		},
+		filter(event, player, name) {
+			if (event.type != "card") {
+				return false;
+			}
+			const card = event.card || event._neutralize_event?.card;
+			if (!card || get.color(card) != "red") {
+				return false;
+			}
+			if (name == "shaMiss") {
+				return event.player == player;
+			}
+			return event._neutralize_event?.player == player;
+		},
+		async cost(event, trigger, player) {
+			event.result = await player
+				.chooseTarget("是否发动【突阵】对另一名其他角色造成1点伤害？", function (card, player, target) {
+					const ev = _status.event.getTrigger();
+					const ref = ev?.target || ev?._neutralize_event?.target;
+					return target != player && target != ref;
+				})
+				.set("ai", function (target) {
+					return get.damageEffect(target, player, player);
+				})
+				.forResult();
+		},
+		logTarget: "targets",
+		async content(event, trigger, player) {
+			await event.targets[0].damage(player);
 		},
 	},
 	qj_mashu_machao: {
@@ -5276,7 +5357,7 @@ const skill = {
 		subSkill: {
 			used: {
 				charlotte: true,
-				forced:true,
+				forced: true,
 				trigger: {
 					global: "dyingAfter",
 				},
@@ -6279,20 +6360,26 @@ const skill = {
 					.forResult();
 			}
 
-			let skills;
-			if (result.control == "主将") {
-				trigger.source.showCharacter(0);
+			const slotIndex = result.control == "主将" ? 0 : 1;
+			const heroName = slotIndex === 0 ? trigger.source.name1 : trigger.source.name2;
+			const heroInfo = heroName && lib.character[heroName];
+			let skills = [];
+			if (heroInfo) {
+				if (Array.isArray(heroInfo)) {
+					skills = heroInfo[3]?.slice(0) || [];
+				} else if (Array.isArray(heroInfo.skills)) {
+					skills = heroInfo.skills.slice(0);
+				}
+			}
+			if (slotIndex === 0) {
 				game.broadcastAll(player => {
 					player.node.avatar.classList.add("disabled");
 				}, trigger.source);
-				skills = lib.character[trigger.source.name][3];
 				game.log(trigger.source, "失去了主将技能");
 			} else {
-				trigger.source.showCharacter(1);
 				game.broadcastAll(player => {
 					player.node.avatar2.classList.add("disabled");
 				}, trigger.source);
-				skills = lib.character[trigger.source.name2][3];
 				game.log(trigger.source, "失去了副将技能");
 			}
 			const list = [];
@@ -6367,8 +6454,8 @@ const skill = {
 			result: {
 				player(player, target) {
 					return 6;
-				}
-			}
+				},
+			},
 		},
 	},
 	qj_shuangren: {
@@ -6501,8 +6588,8 @@ const skill = {
 		audio: "suishi",
 		locked: true,
 		forced: true,
-		preHidden: ["qj_suishi_draw", "qj_suishi_lopse"],
-		group: ["qj_suishi_draw", "qj_suishi_lopse"],
+		preHidden: ["qj_suishi_draw", "qj_suishi_lose"],
+		group: ["qj_suishi_draw", "qj_suishi_lose"],
 		/** @type {Record<string, Skill>} */
 		subSkill: {
 			draw: {
@@ -7099,60 +7186,6 @@ const skill = {
 		async content(event, trigger, player) {
 			player.awakenSkill(event.skill);
 			trigger.num *= 2;
-		},
-	},
-	qj_choufa: {
-		audio: "choufa",
-		enable: "phaseUse",
-		usable: 1,
-		filter(event, player) {
-			return game.hasPlayer(function (current) {
-				return lib.skill.choufa.filterTarget(null, player, current);
-			});
-		},
-		filterTarget(card, player, target) {
-			return target != player && !target.hasSkill("qj_choufa_effct") && target.countCards("h") > 0;
-		},
-		async content(event, trigger, player) {
-			let target = event.target;
-			let result = await player.choosePlayerCard(target, "h", true).forResult();
-			await player.showCards(result.cards, get.translation(player) + "对" + get.translation(target) + "发动了【筹伐】");
-			var type = get.type2(result.cards[0], target),
-				hs = target.getCards("h", function (card) {
-					return card != result.cards[0] && get.type2(card, target) != type;
-				});
-			if (hs.length) {
-				target.addGaintag(hs, "sha_qj_choufa");
-				target.addTempSkill("qj_choufa_effct");
-			}
-		},
-		ai: {
-			order: 9,
-			result: {
-				target(player, target) {
-					return -target.countCards("h");
-				},
-			},
-		},
-		subSkill: {
-			effect: {
-				charlotte: true,
-				onremove(player) {
-					player.removeGaintag("sha_qj_choufa");
-				},
-				mod: {
-					cardname(card) {
-						if (get.itemtype(card) == "card" && card.hasGaintag("sha_qj_choufa")) {
-							return "sha";
-						}
-					},
-					cardnature(card) {
-						if (get.itemtype(card) == "card" && card.hasGaintag("sha_qj_choufa")) {
-							return false;
-						}
-					},
-				},
-			},
 		},
 	},
 	qj_zhaoran: {
@@ -10954,7 +10987,7 @@ const skill = {
 		...createTonglingSkill("tl_guanyu", "yc_zhoucang", "jiu", "【酒】", true),
 	},
 	tl_zhaoyun: {
-		...createTonglingSkill("tl_zhaoyu", "yc_baimayicong", "wuxie", "【无懈可击】"),
+		...createTonglingSkill("tl_zhaoyun", "yc_baimayicong", "wuxie", "【无懈可击】"),
 	},
 	tl_machao: {
 		...createTonglingSkill("tl_machao", "yc_xiliangjingqi", "sha", "【杀】"),
@@ -11002,6 +11035,9 @@ const skill = {
 	},
 	tl_jianshuo: {
 		...createTonglingSkill("tl_jianshuo", "yc_xiyuanjun", "shan", "【闪】"),
+	},
+	tl_zhangliao: {
+		...createTonglingSkill("tl_zhangliao", "yc_bingzhoulangqi", "sha", "【杀】"),
 	},
 };
 
